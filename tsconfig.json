@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "outDir": "build",
+    "strict": true,
+    "lib": ["ES2020"],
+    "types": ["node", "jest", "luxon"],
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowJs": true,
+    "typeRoots": ["./node_modules/@types"],
+    "declaration": true
+  },
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
+  },
+  "include": ["src/**/*", "types/**/*"],
+  "exclude": ["node_modules", "build"]
+}

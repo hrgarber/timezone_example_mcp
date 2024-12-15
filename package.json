@@ -1,0 +1,23 @@
+{
+  "name": "timezone-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "test": "jest",
+    "validate": "tsc --noEmit",
+    "test:integration": "node test-server.js"
+  },
+  "dependencies": {
+    "luxon": "^3.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.0",
+    "@types/node": "^18.0.0",
+    "@types/luxon": "^3.3.2",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.5",
+    "ts-jest": "^29.1.1"
+  }
+}
