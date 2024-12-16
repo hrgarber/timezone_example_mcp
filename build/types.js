@@ -1,4 +1,25 @@
 import { DateTime } from 'luxon';
+// MCP Tool Input Schema for timezone conversion
+export const timezoneConversionSchema = {
+    type: 'object',
+    properties: {
+        time: {
+            type: 'string',
+            description: 'Time in HH:MM format (24-hour)',
+            pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
+        },
+        from_timezone: {
+            type: 'string',
+            description: 'Source timezone (e.g., "America/New_York")'
+        },
+        to_timezone: {
+            type: 'string',
+            description: 'Target timezone (e.g., "Asia/Tokyo")'
+        }
+    },
+    required: ['time', 'from_timezone', 'to_timezone'],
+    additionalProperties: false
+};
 // Error types for better error handling
 export var ConversionErrorType;
 (function (ConversionErrorType) {

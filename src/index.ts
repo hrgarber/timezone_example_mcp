@@ -18,7 +18,7 @@ import {
     timezoneConversionSchema
 } from './types.js';
 
-class TimezoneServer {
+export class TimezoneServer {
     private server: Server;
 
     constructor() {
@@ -234,7 +234,7 @@ class TimezoneServer {
         }
     }
 
-    public async start() {
+    public async start(): Promise<void> {
         const transport = new StdioServerTransport();
         await this.server.connect(transport);
         console.error('Timezone MCP server running on stdio');

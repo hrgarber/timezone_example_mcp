@@ -19,6 +19,26 @@ export interface TimezoneConversionOutput {
         isDST: boolean;
     };
 }
+export declare const timezoneConversionSchema: {
+    type: string;
+    properties: {
+        time: {
+            type: string;
+            description: string;
+            pattern: string;
+        };
+        from_timezone: {
+            type: string;
+            description: string;
+        };
+        to_timezone: {
+            type: string;
+            description: string;
+        };
+    };
+    required: string[];
+    additionalProperties: boolean;
+};
 export declare enum ConversionErrorType {
     INVALID_TIME_FORMAT = "INVALID_TIME_FORMAT",
     INVALID_TIMEZONE = "INVALID_TIMEZONE",
