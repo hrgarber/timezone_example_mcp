@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-import { createServer, Server as HttpServer, IncomingMessage, ServerResponse } from 'http';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import {
+    CallToolRequestSchema,
+    ErrorCode,
+    ListToolsRequestSchema,
+    McpError,
+} from '@modelcontextprotocol/sdk/types.js';
 import { DateTime } from 'luxon';
 import {
     TimezoneConversionInput,
@@ -8,115 +15,98 @@ import {
     ConversionErrorType,
     validateTimezone,
     validateTimeFormat,
-    parseTime
+    timezoneConversionSchema
 } from './types.js';
 
-interface ErrorResponse {
-    error: string;
-    type?: string;
-    details?: unknown;
-}
-
 class TimezoneServer {
-    private server: HttpServer;
-    private port: number;
+    private server: Server;
 
-    constructor(port: number = 3001) {
-        this.port = port;
-        this.server = createServer(this.handleRequest.bind(this));
-    }
+    constructor() {
+        this.server = new Server(
+            {
+                name: 'timezone-server',
+                version: '1.0.0',
+            },
+            {
+                capabilities: {
+                    tools: {},
+                },
+            }
+        );
 
-    private async handleRequest(req: IncomingMessage, res: ServerResponse) {
-        try {
-            // Set CORS headers
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-            res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    
-            // Handle preflight requests
-            if (req.method === 'OPTIONS') {
-                res.writeHead(204);
-                res.end();
-                return;
-            }
-    
-            // Only accept POST requests to /convert
-            if (req.method !== 'POST' || req.url !== '/convert') {
-                this.sendError(res, 404, 'Not Found');
-                return;
-            }
-    
-            if (!req.headers['content-type']?.includes('application/json')) {
-                this.sendError(res, 400, 'Content-Type must be application/json');
-                return;
-            }
-    
-            // Parse request body
-            const body = await this.parseRequestBody(req);
-            const result = await this.convertTime(body);
-            
-            this.sendResponse(res, 200, result);
-        } catch (error) {
-            if (error instanceof ConversionError) {
-                this.sendError(res, 400, error.message, error.type, error.details);
-            } else {
-                console.error('Unexpected error:', error);
-                this.sendError(res, 500, 'Internal Server Error', 'SYSTEM_ERROR');
-            }
-        }
-    }
-    
-    private sendResponse(res: ServerResponse, statusCode: number, data: any) {
-        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(data));
-    }
-    
-    private sendError(
-        res: ServerResponse,
-        statusCode: number,
-        message: string,
-        type?: string,
-        details?: unknown
-    ) {
-        const errorResponse: ErrorResponse = {
-            error: message
-        };
+        this.setupToolHandlers();
         
-        if (type) {
-            errorResponse.type = type;
-        }
-        
-        if (details) {
-            errorResponse.details = details;
-        }
-        
-        this.sendResponse(res, statusCode, errorResponse);
+        // Error handling
+        this.server.onerror = (error) => console.error('[MCP Error]', error);
+        process.on('SIGINT', async () => {
+            await this.server.close();
+            process.exit(0);
+        });
     }
 
-    private parseRequestBody(req: IncomingMessage): Promise<TimezoneConversionInput> {
-        return new Promise((resolve, reject) => {
-            let data = '';
-            req.on('data', (chunk: string) => {
-                data += chunk;
-            });
-            req.on('end', () => {
-                try {
-                    const body = JSON.parse(data);
-                    if (!body.time || !body.from_timezone || !body.to_timezone) {
-                        reject(new ConversionError(
-                            ConversionErrorType.INVALID_TIME_FORMAT,
-                            'Missing required fields: time, from_timezone, to_timezone'
-                        ));
-                        return;
-                    }
-                    resolve(body as TimezoneConversionInput);
-                } catch (error) {
-                    reject(new ConversionError(
-                        ConversionErrorType.INVALID_TIME_FORMAT,
-                        'Invalid JSON payload'
-                    ));
+    private setupToolHandlers() {
+        // Register available tools
+        this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+            tools: [
+                {
+                    name: 'convert_timezone',
+                    description: 'Convert time between different timezones with DST handling',
+                    inputSchema: timezoneConversionSchema,
+                },
+            ],
+        }));
+
+        // Handle tool execution
+        this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+            if (request.params.name !== 'convert_timezone') {
+                throw new McpError(
+                    ErrorCode.MethodNotFound,
+                    `Unknown tool: ${request.params.name}`
+                );
+            }
+
+            try {
+                // Validate and type-cast the input
+                const args = request.params.arguments as Record<string, unknown>;
+                if (!args.time || !args.from_timezone || !args.to_timezone ||
+                    typeof args.time !== 'string' ||
+                    typeof args.from_timezone !== 'string' ||
+                    typeof args.to_timezone !== 'string') {
+                    throw new McpError(
+                        ErrorCode.InvalidParams,
+                        'Invalid parameters: requires time, from_timezone, and to_timezone as strings'
+                    );
                 }
-            });
+                
+                const input: TimezoneConversionInput = {
+                    time: args.time,
+                    from_timezone: args.from_timezone,
+                    to_timezone: args.to_timezone
+                };
+                
+                const result = await this.convertTime(input);
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(result, null, 2),
+                        },
+                    ],
+                };
+            } catch (error) {
+                if (error instanceof ConversionError) {
+                    return {
+                        content: [
+                            {
+                                type: 'text',
+                                text: `Conversion Error: ${error.message}\nType: ${error.type}${error.details ? `\nDetails: ${JSON.stringify(error.details, null, 2)}` : ''}`,
+                            },
+                        ],
+                        isError: true,
+                    };
+                }
+                throw error;
+            }
         });
     }
 
@@ -243,52 +233,14 @@ class TimezoneServer {
             );
         }
     }
-    
-    public start(): Promise<void> {
-        return new Promise((resolve) => {
-            this.server.listen(this.port, () => {
-                console.log(`Timezone conversion server running at http://localhost:${this.port}`);
-                resolve();
-            });
-        });
-    }
-    
-    public stop(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            // Force close any remaining connections
-            this.server.closeAllConnections();
-            
-            this.server.close((err) => {
-                if (err) {
-                    console.error('Error closing server:', err);
-                    reject(err);
-                } else {
-                    console.log('Server stopped successfully');
-                    resolve();
-                }
-            });
-        });
+
+    public async start() {
+        const transport = new StdioServerTransport();
+        await this.server.connect(transport);
+        console.error('Timezone MCP server running on stdio');
     }
 }
 
-export { TimezoneServer };
-
-// Start the server if not in test mode
-if (process.env.NODE_ENV !== 'test') {
-    const port = parseInt(process.env.PORT || '3001', 10);
-    const server = new TimezoneServer(port);
-    server.start().catch(console.error);
-
-    // Handle graceful shutdown
-    process.on('SIGINT', async () => {
-        console.log('\nShutting down server...');
-        try {
-            await server.stop();
-            console.log('Server stopped successfully');
-            process.exit(0);
-        } catch (error) {
-            console.error('Error stopping server:', error);
-            process.exit(1);
-        }
-    });
-}
+// Start the server
+const server = new TimezoneServer();
+server.start().catch(console.error);
